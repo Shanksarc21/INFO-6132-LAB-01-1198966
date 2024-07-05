@@ -1,40 +1,68 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TextInput, Button, FlatList, Switch, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { db } from './firebaseConfig'; 
+import { ref, onValue, push, update, remove } from 'firebase/database';
 
 export default function App() {
   const [taskTitle, setTaskTitle] = useState('');
   const [tasks, setTasks] = useState([]);
 
-  const addTask = () => {
+  useEffect(() => {
+    const fetchTasks = () => {
+      const tasksRef = ref(db, 'tasks');
+      onValue(tasksRef, (snapshot) => {
+        const fetchedTasks = [];
+        snapshot.forEach((childSnapshot) => {
+          fetchedTasks.push({ id: childSnapshot.key, ...childSnapshot.val() });
+        });
+        setTasks(fetchedTasks);
+      });
+    };
+
+    fetchTasks();
+  }, []);
+
+  const addTask = async () => {
     if (taskTitle.trim()) {
-      setTasks([...tasks, { title: taskTitle, status: false }]);
-      setTaskTitle('');
+      const newTask = { title: taskTitle, status: false };
+      try {
+        await push(ref(db, 'tasks'), newTask);
+        setTaskTitle('');
+      } catch (error) {
+        console.error("Error adding task: ", error);
+      }
     }
   };
 
-  const toggleTaskStatus = (index) => {
-    const newTasks = tasks.map((task, taskIndex) =>
-      taskIndex === index ? { ...task, status: !task.status } : task
-    );
-    setTasks(newTasks);
+  const toggleTaskStatus = async (taskId, currentStatus) => {
+    try {
+      const taskRef = ref(db, `tasks/${taskId}`);
+      await update(taskRef, { status: !currentStatus });
+    } catch (error) {
+      console.error("Error updating task: ", error);
+    }
   };
 
-  const deleteTask = (index) => {
-    const newTasks = tasks.filter((task, taskIndex) => taskIndex !== index);
-    setTasks(newTasks);
+  const deleteTask = async (taskId) => {
+    try {
+      const taskRef = ref(db, `tasks/${taskId}`);
+      await remove(taskRef);
+    } catch (error) {
+      console.error("Error deleting task: ", error);
+    }
   };
 
-  const renderTask = ({ item, index }) => (
+  const renderTask = ({ item }) => (
     <View style={styles.task}>
       <Text style={styles.taskTitle}>{item.title}</Text>
-      <Text style={styles.taskStatus}>{item.status ? 'Done/true' : 'Due/false'}</Text>
+      <Text style={styles.taskStatus}>{item.status ? 'Done' : 'Due'}</Text>
       <Switch
         value={item.status}
-        onValueChange={() => toggleTaskStatus(index)}
+        onValueChange={() => toggleTaskStatus(item.id, item.status)}
       />
-      <TouchableOpacity onPress={() => deleteTask(index)}>
+      <TouchableOpacity onPress={() => deleteTask(item.id)}>
         <Ionicons name="trash" size={24} color="red" />
       </TouchableOpacity>
     </View>
@@ -58,7 +86,7 @@ export default function App() {
       <FlatList
         data={tasks}
         renderItem={renderTask}
-        keyExtractor={(item, index) => index.toString()}
+        keyExtractor={(item) => item.id}
         style={styles.taskList}
       />
       <StatusBar style="auto" />
